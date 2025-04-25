@@ -41,7 +41,7 @@ VSCode can use the [`uv`][uv] environment to run notebooks interactively. Ensure
 
 ```
 cd make_dataset
-uv run make_dataset /data/shared/nuScenes/ dataset_out.json --dataset nuscences
+uv run make_dataset /data/shared/nuScenes/ dataset_out.json --dataset nuscenes
 ```
 
 
