@@ -25,11 +25,11 @@ uv sync
 
 ### Download datasets
 
-If you do not already have the AV datasets downloaded on your machine, you can use our scripts. If you already have them downloaded, ensure that the paths in the notebooks are set appropriately. To download the datasets, run the following
+If you do not already have the AV datasets downloaded on your machine, you can use our scripts. If you already have them downloaded, ensure that the paths in the notebooks are set appropriately. To download the datasets, run the following, replacing `path_to_datasets` with your desired path to the datasets (e.g., `/data/shared/` - without the dataset suffix)
 
 ```
 cd data
-./download_nuscenes.sh nuScenes mini
+./download_nuscenes.sh path_to_datasets mini
 ```
 
 ### Running noteboks in VSCode
@@ -39,9 +39,11 @@ VSCode can use the [`uv`][uv] environment to run notebooks interactively. Ensure
 
 ## Generate AV-LLM Dataset
 
+To generate the AV-LLM dataset, run the following, replacing `path_to_datasets` with your path to the data (e.g., `/data/shared/nuScenes`)
+
 ```
 cd make_dataset
-uv run make_dataset /data/shared/nuScenes/ dataset_out.json --dataset nuscenes
+uv run make_dataset path_to_datasets dataset_out.json --dataset nuscenes
 ```
 
 

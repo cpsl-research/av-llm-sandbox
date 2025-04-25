@@ -9,10 +9,10 @@ DATASET=${2:-mini}
 mkdir -p $DATAFOLDER
 
 # Download the nuScenes data
-if [ "$DATASET" -eq "mini" ]; then
-    ./submodules/avstack-api/data/download_nuScenes_mini.sh $DATAFOLDER
-    ./submodules/avstack-api/data/download_nuScenes_CAN.sh $DATAFOLDER
-elif [ "$DATASET" -e "full" ]; then
+if [ "$DATASET" = "mini" ]; then
+    ./../submodules/avstack-api/data/download_nuScenes_mini.sh $DATAFOLDER
+    ./../submodules/avstack-api/data/download_nuScenes_CAN.sh $DATAFOLDER
+elif [ "$DATASET" = "full" ]; then
     echo "ERROR: For now, you have to download the full nuScenes dataset manually!"
     exit 1
 else 
