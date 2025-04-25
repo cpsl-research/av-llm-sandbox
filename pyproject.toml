@@ -1,0 +1,78 @@
+[project]
+name = "av-llm-sandbox"
+version = "0.1.0-alpha.1"
+description = "Prototype environment for using LLMs with AVs"
+authors = [{ name = "Spencer Hallyburton", email = "spencer.hallyburton@duke.edu" }]
+requires-python = ">=3.10,<3.11"
+readme = "README.md"
+license = "MIT"
+keywords = [
+    "self-driving",
+    "autonomy",
+    "perception",
+    "planning",
+    "control",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+]
+dependencies = [
+    "avstack-api",
+    "avstack-core",  # if you need perception, use "avstack-core[percep]"
+]
+
+
+[project.urls]
+Homepage = "https://github.com/cpsl-research"
+Repository = "https://github.com/cpsl-research/av-llm-sandbox"
+
+
+[dependency-groups]
+dev = [
+    "gdown>=4.6.4,<5",
+    "ipywidgets~=8.0",
+    "jupyter>=1.0.0,<2",
+]
+test = [
+    "pytest-cov>=4,<5",
+    "bandit~=1.7",
+    "black[jupyter]~=22.12.0",
+    "mypy>=0,<1",
+    "isort~=5.11",
+    "flake8~=5.0",
+    "autoflake>=1,<2",
+    "pytest>=7.4.4",
+]
+
+[tool.uv]
+default-groups = [
+    "dev",
+    "test",
+]
+
+[tool.uv.sources]
+avstack-api = { path = "submodules/avstack-api", editable = true }
+avstack-core = { path = "submodules/avstack-core", editable = true }
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "CHANGELOG.md",
+]
+
+[tool.hatch.build.targets.wheel]
+include = [
+    "CHANGELOG.md",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q -s"
+testpaths = [
+    "tests",
+    "integration",
+]
