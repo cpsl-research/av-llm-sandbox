@@ -63,7 +63,7 @@ def main(args):
                         agent_state_init.as_reference(),
                         inplace=False,
                     )
-                    # -- diff frame is differential from last
+                    # -- diff frame is differential from last (TODO: fix this)
                     if agent_state_last is None:
                         agent_state_diff = agent_state_global.change_reference(
                             agent_state_global.as_reference(),  # change with itself, so should be 0's
@@ -96,6 +96,7 @@ def main(args):
 
                     # get meta actions over some time horizon
                     frames_ahead = [1, 5, 10]
+                    # time_ahead = [1]
                     meta_actions = {
                         ahead: get_all_meta_actions(
                             agent_current=agent_state_global,
@@ -117,6 +118,7 @@ def main(args):
                                 view: {
                                     f"position_{view}": list(state.position.x),
                                     f"velocity_{view}": list(state.velocity.x),
+                                    f"speed_{view}": state.velocity.norm(),
                                     # f"acceleration_{view}: list(state.acceleration.x),
                                     # NOTE: accel may not be working
                                     f"attitude_{view}": [
