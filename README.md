@@ -46,6 +46,77 @@ cd scripts
 uv run make_dataset.py path_to_datasets --output_prefix dataset --dataset nuscenes
 ```
 
+### Dataset description
+
+The dataset is organized as a dictionary with the following entries. Double letter entries (e.g., `DD`) are placeholders. 
+
+```
+"dataset"
+    "scene_AA"                      # str, dictionary key
+        "agent_BB"                  # str, dictionary key
+            "frame_CC"              # str, dictionary key
+                "frame"             # int
+                "timestamp"         # float
+                "image_paths"       # str, dictionary key
+                    "CAM_DD"        # str, dictionary key
+                "meta_actions"      # str, dictionary key
+                    "dt_EE"         # str, dictionary key
+                        action      # list of 2* ints or null
+                "waypoints_3d"      # str, dictionary key
+                    "dt_EE"         # str, dictionary key
+                        pts_3d      # list of 3 floats
+                "waypoints_pixel"   # str, dictionary key
+                    "dt_EE"         # str, dictionary key
+                        pts_pix     # list of 2 floats
+                "agent_state"       # str, dictionary key
+                    "FF"            # str, dictionary key
+                        "position"  # list of 3 floats
+                        "velocity"  # list of 3 floats
+                        "speed"     # norm of velocity
+                        "attitude"  # list of 4 floats
+                        "yaw"       # float
+"metadata":
+    "action_table"          # str, dictionary key
+        "GG"                # str, dictionary key
+            "HH"            # int
+    "reverse_action_table"  # str, dictionary key
+        "II"                # str, dictionary key
+            "JJ"            # str
+    "dataset"
+        "KK"
+    "waypoints_3d_reference"
+        "LL"
+```
+
+Expanding notes:
+```
+dataset
+------------
+dt_EE       -->  look-ahead time in seconds (e.g., dt_2 is 2 second look-ahead)
+FF          -->  reference frame, one of [global, local, diff]
+action      -->  integer codifying the action (see lookup table)
+pts_3d      -->  future position difference from current position in 3D
+pts_pix     -->  future position difference from current position projected onto
+                 2D image
+attitude    -->  4 dimensional quaternion
+yaw         -->  heading angle (radians)
+
+metadata
+------------
+action_table
+    GG                  -->  str name of the action
+        HH              -->  int for the action 
+reverse_action_table
+    II                  -->  integer for action, **but json requires keys to be str
+                             so actually a str**
+        JJ              -->  str name of the action
+dataset
+    KK                  -->  name of the dataset
+waypoints_3d_reference
+    LL                  -->  reference frame for the waypoints. "camera" means a camera
+                             reference frame with the convention: (X -> right, Y ->
+                             down, Z -> forward) in the driving frame.
+```
 
 ## Best Practices
 

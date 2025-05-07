@@ -46,16 +46,17 @@ def main(args):
         print(f"\n\nProcessing split: {split}, {len(scenes)} scenes")
 
         # loop over available scenes
+        ds_scenes = {}
         for i_scene, scene in enumerate(scenes):
             print(f"Processing scene {i_scene+1}/{len(scenes)}")
-            ds_scene = {}
+            ds_agents = {}
             SD = SM.get_scene_dataset_by_name(scene)
 
             # loop over available agents
             agents = SD.get_agent_set(frame=0)
             for i_agent, agent in enumerate(agents):
                 print(f"Processing agent {i_agent+1}/{len(agents)}")
-                ds_agent = []
+                ds_agent = {}
                 agent_state_init = None
                 agent_state_last = None
 
@@ -158,8 +159,8 @@ def main(args):
                             waypoint_pixel = None
 
                         # store results
-                        meta_actions[dt_ahead] = meta_action
-                        waypoints_3d[dt_ahead] = (
+                        meta_actions[f"dt_{dt_ahead}"] = meta_action
+                        waypoints_3d[f"dt_{dt_ahead}"] = (
                             list(waypoint_3d)
                             if waypoint_3d is not None
                             else waypoint_3d
@@ -171,52 +172,56 @@ def main(args):
                         )
 
                     # store all data for this frame
-                    ds_agent.append(
-                        {
-                            "frame": frame,
-                            "timestamp": timestamp,
-                            "image_paths": camera_image_paths,
-                            "meta_actions": meta_actions,
-                            "has_future_in_scene": has_future_in_scene,
-                            "waypoints_3d": waypoints_3d,
-                            "waypoints_pixel": waypoints_pixel,
-                            "agent_state": {
-                                view: {
-                                    f"position_{view}": list(state.position.x),
-                                    f"velocity_{view}": list(state.velocity.x),
-                                    f"speed_{view}": state.velocity.norm(),
-                                    # f"acceleration_{view}: list(state.acceleration.x),
-                                    # NOTE: accel may not be working
-                                    f"attitude_{view}": [
-                                        state.attitude.q.w,
-                                        state.attitude.q.x,
-                                        state.attitude.q.y,
-                                        state.attitude.q.z,
-                                    ],
-                                    f"yaw_{view}": transform_orientation(
-                                        state.attitude.q, "quat", "euler"
-                                    )[2],
-                                }
-                                for view, state in zip(
-                                    ["global", "local", "diff"],
-                                    [
-                                        agent_state_global,
-                                        agent_state_local,
-                                        agent_state_diff,
-                                    ],
-                                )
-                            },
-                        }
-                    )
+                    ds_frame = {
+                        "frame": frame,
+                        "timestamp": timestamp,
+                        "image_paths": camera_image_paths,
+                        "meta_actions": meta_actions,
+                        "has_future_in_scene": has_future_in_scene,
+                        "waypoints_3d": waypoints_3d,
+                        "waypoints_pixel": waypoints_pixel,
+                        "agent_state": {
+                            view: {
+                                "position": list(state.position.x),
+                                "velocity": list(state.velocity.x),
+                                "speed": state.velocity.norm(),
+                                # f"acceleration_{view}: list(state.acceleration.x),
+                                # NOTE: accel may not be working
+                                "attitude": [
+                                    state.attitude.q.w,
+                                    state.attitude.q.x,
+                                    state.attitude.q.y,
+                                    state.attitude.q.z,
+                                ],
+                                "yaw": transform_orientation(
+                                    state.attitude.q, "quat", "euler"
+                                )[2],
+                            }
+                            for view, state in zip(
+                                ["global", "local", "diff"],
+                                [
+                                    agent_state_global,
+                                    agent_state_local,
+                                    agent_state_diff,
+                                ],
+                            )
+                        },
+                    }
+
+                    # add this frame to the agent
+                    ds_agent[f"frame_{frame}"] = ds_frame
 
                 # add for this agent
-                ds_scene[f"agent_{agent}"] = ds_agent
+                ds_agents[f"agent_{agent}"] = ds_agent
 
             # add for this scene
-            ds_split = {
-                "dataset": ds_scene,
-                "metadata": metadata,
-            }
+            ds_scenes[f"scene_{i_scene}"] = ds_agents
+
+        # add for this scene
+        ds_split = {
+            "dataset": ds_scenes,
+            "metadata": metadata,
+        }
 
         # save dataset
         file_out = os.path.join(f"{args.output_prefix}_{split}.json")
