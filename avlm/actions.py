@@ -23,6 +23,9 @@ class Lateral(int, Enum):
     CHANGE_LANE_RIGHT = 2
     TURN_RIGHT = 3
 
+    def __str__(self):
+        return super().__str__().replace("Lateral.", "")
+
     @staticmethod
     def evaluate(
         agent_current,
@@ -67,6 +70,9 @@ class Longitudinal(int, Enum):
     DECEL = -1
     MAINTAIN = 0
     ACCEL = 1
+
+    def __str__(self):
+        return super().__str__().replace("Longitudinal.", "")
 
     @staticmethod
     def evaluate(

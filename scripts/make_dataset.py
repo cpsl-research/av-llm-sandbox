@@ -6,15 +6,19 @@ from avapi.nuscenes import nuScenesManager
 from avstack.geometry.transformations import project_to_image, transform_orientation
 from tqdm import tqdm
 
-from avlm.actions import get_all_meta_actions, ACTIONS
+from avlm.actions import ACTIONS, Lateral, Longitudinal
 
 
 def main(args):
     if len(args.output_prefix) == 0:
-        raise ValueError("Output prefix is empty")
-    
+        raise ValueError("Output prefix is empty, provide something like 'dataset'")
+
+    # parse dataset name
     if args.dataset.lower() == "nuscenes":
-        SM = nuScenesManager(data_dir=args.dataset_path)
+        SM = nuScenesManager(
+            data_dir=args.dataset_path,
+            split=args.version,
+        )
     elif args.dataset.lower() == "carla":
         raise NotImplementedError
     else:
@@ -23,34 +27,37 @@ def main(args):
     # build metadata
     metadata = {
         "action_table": {
-            action.__name__: {
-                str(state).split(".")[-1]: int(state)
-                for state in action
-            }
+            action.__name__: {str(state): int(state) for state in action}
             for action in ACTIONS
         },
         "reverse_action_table": {
-            action.__name__: {
-                int(state): str(state).split(".")[-1]
-                for state in action
-            }
+            action.__name__: {int(state): str(state) for state in action}
             for action in ACTIONS
         },
         "dataset": args.dataset,
-        "waypoints_3d_reference": "camera", 
+        "waypoints_3d_reference": "camera",
     }
 
     # loop over splits
     for split in ["train", "val", "test"]:
+        frames_completed = 0
+        agents_completed = 0
+        scenes_completed = 0
         scenes = SM.splits_scenes[split]
-        print(f"\n\nProcessing split: {split}, {len(scenes)} scenes")
+        print(f"\n\nProcessing split: {split}, {len(scenes)} scenes\n\n")
 
         # loop over available scenes
         ds_scenes = {}
         for i_scene, scene in enumerate(scenes):
             print(f"Processing scene {i_scene+1}/{len(scenes)}")
             ds_agents = {}
-            SD = SM.get_scene_dataset_by_name(scene)
+            try:
+                SD = SM.get_scene_dataset_by_name(scene)
+            except Exception:
+                print(
+                    f"Scene {scene} could not be loaded, potentially due to missing CAN data (for nuScenes)...skipping"
+                )
+                continue
 
             # loop over available agents
             agents = SD.get_agent_set(frame=0)
@@ -135,12 +142,16 @@ def main(args):
                             )
 
                             # get the meta action defined at this time
-                            meta_action = get_all_meta_actions(
-                                agent_current=agent_state_global,
-                                agent_future=SD.get_agent(
-                                    frame=frame_ahead, agent=agent
+                            agent_current = agent_state_global
+                            agent_future = SD.get_agent(frame=frame_ahead, agent=agent)
+                            meta_action = {
+                                "lateral": str(
+                                    Lateral.evaluate(agent_current, agent_future)
                                 ),
-                            )
+                                "longitudinal": str(
+                                    Longitudinal.evaluate(agent_current, agent_future)
+                                ),
+                            }
 
                             # get the waypoints for this time
                             agent_future = SD.get_agent(frame=frame_ahead, agent=agent)
@@ -210,18 +221,29 @@ def main(args):
 
                     # add this frame to the agent
                     ds_agent[f"frame_{frame}"] = ds_frame
+                    frames_completed += 1
 
                 # add for this agent
                 ds_agents[f"agent_{agent}"] = ds_agent
+                agents_completed += 1
 
             # add for this scene
             ds_scenes[f"scene_{i_scene}"] = ds_agents
+            scenes_completed += 1
 
         # add for this scene
         ds_split = {
             "dataset": ds_scenes,
             "metadata": metadata,
         }
+
+        # print out results
+        sep = "-" * 50
+        print(
+            f"\nFinished generating {split} dataset! Results:"
+            f"\n\n{scenes_completed:>6d} scenes completed\n{agents_completed:>6d}"
+            f" agents completed\n{frames_completed:>6d} frames completed\n\n{sep}"
+        )
 
         # save dataset
         file_out = os.path.join(f"{args.output_prefix}_{split}.json")
@@ -234,6 +256,9 @@ def main(args):
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("dataset_path", type=str)
+    parser.add_argument(
+        "--version", type=str, required=True, choices=["v1.0-mini", "v1.0-trainval"]
+    )
     parser.add_argument("--output_prefix", default="dataset", type=str)
     parser.add_argument("--dataset", default="nuscenes", type=str)
     args = parser.parse_args()

@@ -39,11 +39,11 @@ VSCode can use the [`uv`][uv] environment to run notebooks interactively. Ensure
 
 ## Generate AV-LLM Dataset
 
-To generate the AV-LLM dataset, run the following, replacing `path_to_datasets` with your path to the data (e.g., `/data/shared/nuScenes`)
+To generate the AV-LLM dataset, run the following, replacing `path_to_datasets` with your path to the data (e.g., `/data/shared/nuScenes`) and VERSION as one of [`v1.0-mini`, `v1.0-trainval`] (the mini is for quick debugging). 
 
 ```
 cd scripts
-uv run make_dataset.py path_to_datasets --output_prefix dataset --dataset nuscenes
+uv run make_dataset.py path_to_datasets --version VERSION --output_prefix dataset --dataset nuscenes
 ```
 
 ### Dataset description
@@ -61,7 +61,7 @@ The dataset is organized as a dictionary with the following entries. Double lett
                     "CAM_DD"        # str, dictionary key
                 "meta_actions"      # str, dictionary key
                     "dt_EE"         # str, dictionary key
-                        action      # list of 2* ints or null
+                        action      # list of 2* str or null
                 "waypoints_3d"      # str, dictionary key
                     "dt_EE"         # str, dictionary key
                         pts_3d      # list of 3 floats
@@ -94,7 +94,7 @@ dataset
 ------------
 dt_EE       -->  look-ahead time in seconds (e.g., dt_2 is 2 second look-ahead)
 FF          -->  reference frame, one of [global, local, diff]
-action      -->  integer codifying the action (see lookup table)
+action      -->  string codifying the action (see lookup table)
 pts_3d      -->  future position difference from current position in 3D
 pts_pix     -->  future position difference from current position projected onto
                  2D image
@@ -108,7 +108,7 @@ action_table
         HH              -->  int for the action 
 reverse_action_table
     II                  -->  integer for action, **but json requires keys to be str
-                             so actually a str**
+                             so actually a str of the int**
         JJ              -->  str name of the action
 dataset
     KK                  -->  name of the dataset
