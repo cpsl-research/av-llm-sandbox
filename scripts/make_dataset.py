@@ -1,16 +1,18 @@
 import json
+import os
 from argparse import ArgumentParser
 
 from avapi.nuscenes import nuScenesManager
 from avstack.geometry.transformations import project_to_image, transform_orientation
 from tqdm import tqdm
 
-from avlm.actions import get_all_meta_actions
+from avlm.actions import get_all_meta_actions, ACTIONS
 
 
 def main(args):
-    dataset = {}
-
+    if len(args.output_prefix) == 0:
+        raise ValueError("Output prefix is empty")
+    
     if args.dataset.lower() == "nuscenes":
         SM = nuScenesManager(data_dir=args.dataset_path)
     elif args.dataset.lower() == "carla":
@@ -18,9 +20,28 @@ def main(args):
     else:
         raise NotImplementedError(args.dataset.lower())
 
+    # build metadata
+    metadata = {
+        "action_table": {
+            action.__name__: {
+                str(state).split(".")[-1]: int(state)
+                for state in action
+            }
+            for action in ACTIONS
+        },
+        "reverse_action_table": {
+            action.__name__: {
+                int(state): str(state).split(".")[-1]
+                for state in action
+            }
+            for action in ACTIONS
+        },
+        "dataset": args.dataset,
+        "waypoints_3d_reference": "camera", 
+    }
+
     # loop over splits
     for split in ["train", "val", "test"]:
-        ds_split = {}
         scenes = SM.splits_scenes[split]
         print(f"\n\nProcessing split: {split}, {len(scenes)} scenes")
 
@@ -98,9 +119,11 @@ def main(args):
                     meta_actions = {}
                     waypoints_3d = {}
                     waypoints_pixel = {}
+                    has_future_in_scene = False
                     for dt_ahead in times_ahead:
                         # only run if the future time is within the dataset
                         if timestamp + dt_ahead <= timestamps_all[-1]:
+                            has_future_in_scene = True
                             # get the frame corresponding to this time
                             frame_ahead = SD.get_frame_at_timestamp(
                                 timestamp=timestamp + dt_ahead,
@@ -154,6 +177,7 @@ def main(args):
                             "timestamp": timestamp,
                             "image_paths": camera_image_paths,
                             "meta_actions": meta_actions,
+                            "has_future_in_scene": has_future_in_scene,
                             "waypoints_3d": waypoints_3d,
                             "waypoints_pixel": waypoints_pixel,
                             "agent_state": {
@@ -189,20 +213,23 @@ def main(args):
                 ds_scene[f"agent_{agent}"] = ds_agent
 
             # add for this scene
-            ds_split[scene] = ds_scene
+            ds_split = {
+                "dataset": ds_scene,
+                "metadata": metadata,
+            }
 
-        # add for this split
-        dataset[split] = ds_split
-
-    # save dataset
-    with open(args.file_out, "w") as f:
-        json.dump(dataset, f)
+        # save dataset
+        file_out = os.path.join(f"{args.output_prefix}_{split}.json")
+        if len(os.path.dirname(file_out)) > 0:
+            os.makedirs(os.path.dirname(file_out), exist_ok=True)
+        with open(file_out, "w") as f:
+            json.dump(ds_split, f)
 
 
 if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("dataset_path", type=str)
-    parser.add_argument("file_out", type=str)
+    parser.add_argument("--output_prefix", default="dataset", type=str)
     parser.add_argument("--dataset", default="nuscenes", type=str)
     args = parser.parse_args()
     main(args)

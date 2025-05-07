@@ -43,7 +43,7 @@ To generate the AV-LLM dataset, run the following, replacing `path_to_datasets` 
 
 ```
 cd scripts
-uv run make_dataset.py path_to_datasets dataset_out.json --dataset nuscenes
+uv run make_dataset.py path_to_datasets --output_prefix dataset --dataset nuscenes
 ```
 
 
