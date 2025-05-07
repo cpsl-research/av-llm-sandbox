@@ -1,5 +1,5 @@
 [project]
-name = "av-llm-sandbox"
+name = "avlm"
 version = "0.1.0-alpha.1"
 description = "Prototype environment for using LLMs with AVs"
 authors = [{ name = "Spencer Hallyburton", email = "spencer.hallyburton@duke.edu" }]
@@ -57,11 +57,13 @@ avstack-core = { path = "submodules/avstack-core", editable = true }
 
 [tool.hatch.build.targets.sdist]
 include = [
+    "avlm",
     "CHANGELOG.md",
 ]
 
 [tool.hatch.build.targets.wheel]
 include = [
+    "avlm",
     "CHANGELOG.md",
 ]
 

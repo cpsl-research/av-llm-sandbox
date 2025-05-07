@@ -1,10 +1,11 @@
 import json
 from argparse import ArgumentParser
-from tqdm import tqdm
 
 from avapi.nuscenes import nuScenesManager
-from avstack.geometry.transformations import transform_orientation
-from meta_actions import get_all_meta_actions
+from avstack.geometry.transformations import project_to_image, transform_orientation
+from tqdm import tqdm
+
+from avlm.actions import get_all_meta_actions
 
 
 def main(args):
@@ -38,6 +39,9 @@ def main(args):
                 agent_state_last = None
 
                 # loop over frames
+                timestamps_all = SD.get_timestamps(
+                    sensor=None, agent=agent, utime=False
+                )
                 frames_all = SD.get_frames(sensor=None, agent=agent)
                 for frame in tqdm(frames_all):
                     sensor_primary = (
@@ -52,6 +56,9 @@ def main(args):
 
                     # get agent information
                     timestamp = SD.get_timestamp(
+                        frame=frame, sensor=sensor_primary, agent=agent
+                    )
+                    cam_calib = SD.get_calibration(
                         frame=frame, sensor=sensor_primary, agent=agent
                     )
                     # -- global frame is with world origin
@@ -86,26 +93,59 @@ def main(args):
                         )
                     }
 
-                    #########################################################
-                    # NOTE: I am currently running this with some fixed
-                    # number of frames ahead. This can be changed. It will
-                    # not scale properly between datasets with different
-                    # data rates. If there is not data for the desired
-                    # look-ahead frame number, it says no meta action.
-                    #########################################################
-
                     # get meta actions over some time horizon
-                    frames_ahead = [1, 5, 10]
-                    # time_ahead = [1]
-                    meta_actions = {
-                        ahead: get_all_meta_actions(
-                            agent_current=agent_state_global,
-                            agent_future=SD.get_agent(frame=frame + ahead, agent=agent),
+                    times_ahead = [2, 4, 6]
+                    meta_actions = {}
+                    waypoints_3d = {}
+                    waypoints_pixel = {}
+                    for dt_ahead in times_ahead:
+                        # only run if the future time is within the dataset
+                        if timestamp + dt_ahead <= timestamps_all[-1]:
+                            # get the frame corresponding to this time
+                            frame_ahead = SD.get_frame_at_timestamp(
+                                timestamp=timestamp + dt_ahead,
+                                sensor=sensor_primary,
+                                agent=None,
+                                utime=False,
+                                dt_tolerance=0.5,
+                            )
+
+                            # get the meta action defined at this time
+                            meta_action = get_all_meta_actions(
+                                agent_current=agent_state_global,
+                                agent_future=SD.get_agent(
+                                    frame=frame_ahead, agent=agent
+                                ),
+                            )
+
+                            # get the waypoints for this time
+                            agent_future = SD.get_agent(frame=frame_ahead, agent=agent)
+                            box_future = agent_future.box.change_reference(
+                                cam_calib.reference, inplace=False
+                            )
+                            waypoint_3d = (
+                                box_future.position.x
+                            )  # NOTE: this is in the camera coordinate frame
+                            waypoint_pixel = project_to_image(
+                                waypoint_3d[:, None].T, cam_calib.P
+                            )[0, :]
+                        else:
+                            meta_action = None
+                            waypoint_3d = None
+                            waypoint_pixel = None
+
+                        # store results
+                        meta_actions[dt_ahead] = meta_action
+                        waypoints_3d[dt_ahead] = (
+                            list(waypoint_3d)
+                            if waypoint_3d is not None
+                            else waypoint_3d
                         )
-                        if frame + ahead in frames_all
-                        else None
-                        for ahead in frames_ahead
-                    }
+                        waypoints_pixel[dt_ahead] = (
+                            list(waypoint_pixel)
+                            if waypoint_pixel is not None
+                            else waypoint_pixel
+                        )
 
                     # store all data for this frame
                     ds_agent.append(
@@ -114,6 +154,8 @@ def main(args):
                             "timestamp": timestamp,
                             "image_paths": camera_image_paths,
                             "meta_actions": meta_actions,
+                            "waypoints_3d": waypoints_3d,
+                            "waypoints_pixel": waypoints_pixel,
                             "agent_state": {
                                 view: {
                                     f"position_{view}": list(state.position.x),
@@ -125,7 +167,7 @@ def main(args):
                                         state.attitude.q.w,
                                         state.attitude.q.x,
                                         state.attitude.q.y,
-                                        state.attitude.q.z
+                                        state.attitude.q.z,
                                     ],
                                     f"yaw_{view}": transform_orientation(
                                         state.attitude.q, "quat", "euler"

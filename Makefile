@@ -1,7 +1,7 @@
 NAME := avstack
 INSTALL_STAMP := .install.stamp
 UV := $(shell command -v uv 2> /dev/null)
-PYFOLDERS := make_dataset notebooks
+PYFOLDERS := avlm notebooks scripts
 .DEFAULT_GOAL := help
 
 .PHONY: help

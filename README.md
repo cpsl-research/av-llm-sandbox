@@ -42,8 +42,8 @@ VSCode can use the [`uv`][uv] environment to run notebooks interactively. Ensure
 To generate the AV-LLM dataset, run the following, replacing `path_to_datasets` with your path to the data (e.g., `/data/shared/nuScenes`)
 
 ```
-cd make_dataset
-uv run make_dataset path_to_datasets dataset_out.json --dataset nuscenes
+cd scripts
+uv run make_dataset.py path_to_datasets dataset_out.json --dataset nuscenes
 ```
 
 
