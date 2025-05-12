@@ -1,0 +1,1 @@
+nohup python data_collect.py > data_collect.log 2>&1 &
