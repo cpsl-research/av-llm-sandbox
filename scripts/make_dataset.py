@@ -2,6 +2,7 @@ import json
 import os
 from argparse import ArgumentParser
 
+import numpy as np
 from avapi.nuscenes import nuScenesManager
 from avstack.geometry.transformations import project_to_image, transform_orientation
 from tqdm import tqdm
@@ -122,13 +123,61 @@ def main(args):
                         )
                     }
 
-                    # get meta actions over some time horizon
-                    times_ahead = [2, 4, 6]
-                    meta_actions = {}
+                    # get future waypoints
+                    dt_waypoints = 0.5  # spacing between waypoints
+                    int_waypoints = 3  # total time interval
                     waypoints_3d = {}
                     waypoints_pixel = {}
+                    for dt_ahead in np.arange(
+                        dt_waypoints, dt_waypoints + int_waypoints, dt_waypoints
+                    ):
+                        if timestamp + dt_ahead <= timestamps_all[-1]:
+                            # get the frame corresponding to this time
+                            frame_ahead = SD.get_frame_at_timestamp(
+                                timestamp=timestamp + dt_ahead,
+                                sensor=sensor_primary,
+                                agent=None,
+                                utime=False,
+                                dt_tolerance=0.5,
+                            )
+
+                            # get future agent position
+                            agent_future = SD.get_agent(frame=frame_ahead, agent=agent)
+                            box_future = agent_future.box.change_reference(
+                                cam_calib.reference, inplace=False
+                            )
+
+                            # compute waypoints
+                            waypoint_3d = (
+                                box_future.position.x
+                            )  # NOTE: this is in the camera coordinate frame
+                            waypoint_pixel = project_to_image(
+                                waypoint_3d[:, None].T, cam_calib.P
+                            )[0, :]
+                        else:
+                            waypoint_3d = None
+                            waypoint_pixel = None
+
+                        # store waypoints
+                        waypoints_3d[f"dt_{dt_ahead:.2f}"] = (
+                            list(waypoint_3d)
+                            if waypoint_3d is not None
+                            else waypoint_3d
+                        )
+                        waypoints_pixel[f"dt_{dt_ahead:.2f}"] = (
+                            list(waypoint_pixel)
+                            if waypoint_pixel is not None
+                            else waypoint_pixel
+                        )
+
+                    # get future meta actions
+                    dt_action = 1
+                    int_action = 3
+                    meta_actions = {}
                     has_future_in_scene = False
-                    for dt_ahead in times_ahead:
+                    for dt_ahead in np.arange(
+                        dt_action, dt_action + int_action, dt_action
+                    ):
                         # only run if the future time is within the dataset
                         if timestamp + dt_ahead <= timestamps_all[-1]:
                             has_future_in_scene = True
@@ -153,37 +202,16 @@ def main(args):
                                 ),
                             }
 
-                            # get the waypoints for this time
-                            agent_future = SD.get_agent(frame=frame_ahead, agent=agent)
-                            box_future = agent_future.box.change_reference(
-                                cam_calib.reference, inplace=False
-                            )
-                            waypoint_3d = (
-                                box_future.position.x
-                            )  # NOTE: this is in the camera coordinate frame
-                            waypoint_pixel = project_to_image(
-                                waypoint_3d[:, None].T, cam_calib.P
-                            )[0, :]
                         else:
                             meta_action = None
-                            waypoint_3d = None
-                            waypoint_pixel = None
 
                         # store results
-                        meta_actions[f"dt_{dt_ahead}"] = meta_action
-                        waypoints_3d[f"dt_{dt_ahead}"] = (
-                            list(waypoint_3d)
-                            if waypoint_3d is not None
-                            else waypoint_3d
-                        )
-                        waypoints_pixel[dt_ahead] = (
-                            list(waypoint_pixel)
-                            if waypoint_pixel is not None
-                            else waypoint_pixel
-                        )
+                        meta_actions[f"dt_{dt_ahead:.2f}"] = meta_action
 
                     # store all data for this frame
                     ds_frame = {
+                        "scene": scene,
+                        "agent": agent,
                         "frame": frame,
                         "timestamp": timestamp,
                         "image_paths": camera_image_paths,
