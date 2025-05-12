@@ -210,6 +210,8 @@ def main(args):
 
                     # store all data for this frame
                     ds_frame = {
+                        "scene": scene,
+                        "agent": agent,
                         "frame": frame,
                         "timestamp": timestamp,
                         "image_paths": camera_image_paths,
