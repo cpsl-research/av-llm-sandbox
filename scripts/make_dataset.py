@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 
 import numpy as np
 from avapi.nuscenes import nuScenesManager
+from avstack.geometry import q_mult_vec, q_stan_to_cam
 from avstack.geometry.transformations import project_to_image, transform_orientation
 from tqdm import tqdm
 
@@ -93,6 +94,7 @@ def main(args):
                     )
                     # -- global frame is with world origin
                     agent_state_global = SD.get_agent(frame=frame, agent=agent)
+                    agent_state_reference = agent_state_global.as_reference()
                     if agent_state_init is None:
                         agent_state_init = agent_state_global
                     # -- local frame is with t=0 origin
@@ -141,18 +143,24 @@ def main(args):
                                 dt_tolerance=0.5,
                             )
 
-                            # get future agent position
+                            # get future agent position for 3d waypoints in cam coordinates
                             agent_future = SD.get_agent(frame=frame_ahead, agent=agent)
                             box_future = agent_future.box.change_reference(
-                                cam_calib.reference, inplace=False
+                                agent_state_reference, inplace=False
+                            )
+                            waypoint_3d = q_mult_vec(
+                                q_stan_to_cam,
+                                box_future.position.x,
                             )
 
-                            # compute waypoints
-                            waypoint_3d = (
-                                box_future.position.x
-                            )  # NOTE: this is in the camera coordinate frame
+                            # convert to pixel coordinates in camera
+                            position_future_camera = (
+                                agent_future.position.change_reference(
+                                    cam_calib.reference, inplace=False
+                                )
+                            )
                             waypoint_pixel = project_to_image(
-                                waypoint_3d[:, None].T, cam_calib.P
+                                position_future_camera[:, None].T, cam_calib.P
                             )[0, :]
                         else:
                             waypoint_3d = None
