@@ -181,8 +181,10 @@ def main(args):
                     # get future meta actions
                     dt_action = 1
                     int_action = 3
-                    meta_actions = {}
+                    meta_actions_from_ti = {}
+                    meta_actions_from_dt = {}
                     has_future_in_scene = False
+                    agent_state_global_last = agent_state_global
                     for dt_ahead in np.arange(
                         dt_action, dt_action + int_action, dt_action
                     ):
@@ -198,10 +200,10 @@ def main(args):
                                 dt_tolerance=0.5,
                             )
 
-                            # get the meta action defined at this time
+                            # get the meta action at this time relative to the t=now
                             agent_current = agent_state_global
                             agent_future = SD.get_agent(frame=frame_ahead, agent=agent)
-                            meta_action = {
+                            meta_action_from_ti = {
                                 "lateral": str(
                                     Lateral.evaluate(agent_current, agent_future)
                                 ),
@@ -210,20 +212,39 @@ def main(args):
                                 ),
                             }
 
+                            # get the meta action at this time relative to t=t-dt
+                            agent_current = agent_state_global_last
+                            agent_future = SD.get_agent(frame=frame_ahead, agent=agent)
+                            meta_action_from_dt = {
+                                "lateral": str(
+                                    Lateral.evaluate(agent_current, agent_future)
+                                ),
+                                "longitudinal": str(
+                                    Longitudinal.evaluate(agent_current, agent_future)
+                                ),
+                            }
+
+                            # update for the next meta_action_from_dt
+                            agent_state_global_last = agent_future
                         else:
-                            meta_action = None
+                            meta_action_from_ti = None
+                            meta_action_from_dt = None
 
                         # store results
-                        meta_actions[f"dt_{dt_ahead:.2f}"] = meta_action
+                        meta_actions_from_ti[f"dt_{dt_ahead:.2f}"] = meta_action_from_ti
+                        meta_actions_from_dt[f"dt_{dt_ahead:.2f}"] = meta_action_from_dt
 
                     # store all data for this frame
+                    token = SD._get_sensor_record(frame, SD.sensors[sensor_primary])
                     ds_frame = {
+                        "token": token,
                         "scene": scene,
                         "agent": agent,
                         "frame": frame,
                         "timestamp": timestamp,
                         "image_paths": camera_image_paths,
-                        "meta_actions": meta_actions,
+                        "meta_actions_from_ti": meta_actions_from_ti,
+                        "meta_actions_from_dt": meta_actions_from_dt,
                         "has_future_in_scene": has_future_in_scene,
                         "waypoints_3d": waypoints_3d,
                         "waypoints_pixel": waypoints_pixel,
@@ -296,6 +317,6 @@ if __name__ == "__main__":
         "--version", type=str, required=True, choices=["v1.0-mini", "v1.0-trainval"]
     )
     parser.add_argument("--output_prefix", default="dataset", type=str)
-    parser.add_argument("--dataset", default="nuscenes", type=str)
+    parser.add_argument("--dataset", choices=["nuscenes"], default="nuscenes", type=str)
     args = parser.parse_args()
     main(args)
