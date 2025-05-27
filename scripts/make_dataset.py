@@ -234,6 +234,12 @@ def main(args):
                         meta_actions_from_ti[f"dt_{dt_ahead:.2f}"] = meta_action_from_ti
                         meta_actions_from_dt[f"dt_{dt_ahead:.2f}"] = meta_action_from_dt
 
+                    # get the trajectories of all objects
+                    obj_trajectories = {}
+
+                    # denote the set of "key" objects
+                    key_objects = set()
+
                     # store all data for this frame
                     token = SD._get_sensor_record(frame, SD.sensors[sensor_primary])
                     ds_frame = {
@@ -248,6 +254,8 @@ def main(args):
                         "has_future_in_scene": has_future_in_scene,
                         "waypoints_3d": waypoints_3d,
                         "waypoints_pixel": waypoints_pixel,
+                        "object_trajectories": obj_trajectories,
+                        "key_objects": key_objects,
                         "agent_state": {
                             view: {
                                 "position": list(state.position.x),
