@@ -1,6 +1,7 @@
 import json
 import os
 from argparse import ArgumentParser
+from typing import TYPE_CHECKING, Dict
 
 import numpy as np
 from avapi.nuscenes import nuScenesManager
@@ -11,7 +12,38 @@ from tqdm import tqdm
 from avlm.actions import ACTIONS, Lateral, Longitudinal
 
 
-def main(args):
+if TYPE_CHECKING:
+    from avstack.environment import ObjectState
+
+
+def convert_object_to_dictionary(obj: "ObjectState") -> Dict:
+    """Converts object to dictionary for JSON storage"""
+    obj_dict = {
+        "ID": obj.ID,
+        "class": obj.obj_type,
+        "position": list(obj.position.x),
+        "velocity": list(obj.velocity.x),
+        "speed": obj.velocity.norm(),
+        # f"acceleration_{view}: list(state.acceleration.x),
+        # NOTE: accel may not be working
+        "attitude": [
+            obj.attitude.q.w,
+            obj.attitude.q.x,
+            obj.attitude.q.y,
+            obj.attitude.q.z,
+        ],
+        "yaw": transform_orientation(obj.attitude.q, "quat", "euler")[2],
+    }
+    return obj_dict
+
+
+def main(args, d_key_thresh=15):
+    """Main script for dataset generation
+
+    Arguments:
+        d_key_thresh - threshold for distance to determine if an object is key
+    """
+
     if len(args.output_prefix) == 0:
         raise ValueError("Output prefix is empty, provide something like 'dataset'")
 
@@ -234,6 +266,57 @@ def main(args):
                         meta_actions_from_ti[f"dt_{dt_ahead:.2f}"] = meta_action_from_ti
                         meta_actions_from_dt[f"dt_{dt_ahead:.2f}"] = meta_action_from_dt
 
+                    # get the current states of all visible objects -- in camera coordinates
+                    objs = SD.get_objects(
+                        frame=frame, sensor=sensor_primary, agent=agent
+                    )
+                    obj_states = {
+                        obj.ID: convert_object_to_dictionary(obj) for obj in objs
+                    }
+
+                    # get the future trajectories of all objects -- in camera coordinates
+                    dt_traj = 0.5  # spacing between waypoints
+                    int_traj = 3  # total time interval
+                    obj_trajectories = {obj.ID: [] for obj in objs}
+                    for dt_ahead in np.arange(dt_traj, dt_traj + int_traj, dt_traj):
+                        # only run if the future time is within the dataset
+                        if timestamp + dt_ahead <= timestamps_all[-1]:
+                            # get the frame corresponding to this time
+                            frame_ahead = SD.get_frame_at_timestamp(
+                                timestamp=timestamp + dt_ahead,
+                                sensor=sensor_primary,
+                                agent=None,
+                                utime=False,
+                                dt_tolerance=0.5,
+                            )
+
+                            # get future trajs -- assumes consistent object IDs
+                            objs_future = SD.get_objects(
+                                frame=frame_ahead, sensor=sensor_primary, agent=agent
+                            )
+                            for obj_future in objs_future:
+                                if obj_future.ID in obj_trajectories:
+                                    # change reference frame
+                                    obj_future.change_reference(
+                                        cam_calib.reference, inplace=True
+                                    )
+
+                                    # append the object
+                                    obj_trajectories[obj_future.ID].append(
+                                        {
+                                            "frame": frame_ahead,
+                                            "timestamp": timestamp + dt_ahead,
+                                            "state": convert_object_to_dictionary(
+                                                obj_future
+                                            ),
+                                        }
+                                    )
+
+                    # denote the set of "key" objects
+                    key_objects = [
+                        obj.ID for obj in objs if obj.position.norm() < d_key_thresh
+                    ]
+
                     # store all data for this frame
                     token = SD._get_sensor_record(frame, SD.sensors[sensor_primary])
                     ds_frame = {
@@ -248,23 +331,13 @@ def main(args):
                         "has_future_in_scene": has_future_in_scene,
                         "waypoints_3d": waypoints_3d,
                         "waypoints_pixel": waypoints_pixel,
+                        "object_states": {
+                            "key_objects": key_objects,
+                            "states": obj_states,
+                            "trajectories": obj_trajectories,
+                        },
                         "agent_state": {
-                            view: {
-                                "position": list(state.position.x),
-                                "velocity": list(state.velocity.x),
-                                "speed": state.velocity.norm(),
-                                # f"acceleration_{view}: list(state.acceleration.x),
-                                # NOTE: accel may not be working
-                                "attitude": [
-                                    state.attitude.q.w,
-                                    state.attitude.q.x,
-                                    state.attitude.q.y,
-                                    state.attitude.q.z,
-                                ],
-                                "yaw": transform_orientation(
-                                    state.attitude.q, "quat", "euler"
-                                )[2],
-                            }
+                            view: convert_object_to_dictionary(state)
                             for view, state in zip(
                                 ["global", "local", "diff"],
                                 [
