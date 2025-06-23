@@ -16,23 +16,26 @@ if TYPE_CHECKING:
     from avstack.environment import ObjectState
 
 
-def convert_object_to_dictionary(obj: "ObjectState") -> Dict:
-    """Converts object to dictionary for JSON storage"""
+def convert_object_to_dictionary_bev(obj: "ObjectState") -> Dict:
+    """Converts object to dictionary for JSON storage
+
+    Assumes input data is in forward-facing camera reference frame with coordinates:
+    X: +right
+    Y: +down
+    Z: +forward
+
+    Puts all the data in the BEV reference frame with the coordinates:
+    X: +right
+    Y: +forward
+    Z: marginalized out (was +up)
+    """
     obj_dict = {
         "ID": obj.ID,
         "class": obj.obj_type,
-        "position": list(obj.position.x),
-        "velocity": list(obj.velocity.x),
+        "position": list(obj.position.x[[0, 2]]),
+        "velocity": list(obj.velocity.x[[0, 2]]),
         "speed": obj.velocity.norm(),
-        # f"acceleration_{view}: list(state.acceleration.x),
-        # NOTE: accel may not be working
-        "attitude": [
-            obj.attitude.q.w,
-            obj.attitude.q.x,
-            obj.attitude.q.y,
-            obj.attitude.q.z,
-        ],
-        "yaw": transform_orientation(obj.attitude.q, "quat", "euler")[2],
+        "angle": transform_orientation(obj.attitude.q, "quat", "euler")[2],
     }
     return obj_dict
 
@@ -89,7 +92,8 @@ def main(args, d_key_thresh=15):
                 SD = SM.get_scene_dataset_by_name(scene)
             except Exception:
                 print(
-                    f"Scene {scene} could not be loaded, potentially due to missing CAN data (for nuScenes)...skipping"
+                    f"Scene {scene} could not be loaded, potentially due to"
+                    f"missing CAN data (for nuScenes)...skipping"
                 )
                 continue
 
@@ -98,7 +102,7 @@ def main(args, d_key_thresh=15):
             for i_agent, agent in enumerate(agents):
                 print(f"Processing agent {i_agent+1}/{len(agents)}")
                 ds_agent = {}
-                agent_state_init = None
+                agent_reference_init = None
                 agent_state_last = None
 
                 # loop over frames
@@ -124,16 +128,23 @@ def main(args, d_key_thresh=15):
                     cam_calib = SD.get_calibration(
                         frame=frame, sensor=sensor_primary, agent=agent
                     )
+
                     # -- global frame is with world origin
                     agent_state_global = SD.get_agent(frame=frame, agent=agent)
                     agent_state_reference = agent_state_global.as_reference()
-                    if agent_state_init is None:
-                        agent_state_init = agent_state_global
-                    # -- local frame is with t=0 origin
+                    if agent_reference_init is None:
+                        agent_reference_moving = agent_state_global.as_reference()
+                        # make it a fixed reference
+                        agent_reference_init = (
+                            agent_reference_moving.get_static_reference()
+                        )
+
+                    # -- static local frame is with t=0 origin
                     agent_state_local = agent_state_global.change_reference(
-                        agent_state_init.as_reference(),
+                        agent_reference_init,
                         inplace=False,
                     )
+
                     # -- diff frame is differential from last (TODO: fix this)
                     if agent_state_last is None:
                         agent_state_diff = agent_state_global.change_reference(
@@ -270,48 +281,72 @@ def main(args, d_key_thresh=15):
                     objs = SD.get_objects(
                         frame=frame, sensor=sensor_primary, agent=agent
                     )
-                    obj_states = {
-                        obj.ID: convert_object_to_dictionary(obj) for obj in objs
-                    }
+                    obj_IDs = [obj.ID for obj in objs]
 
                     # get the future trajectories of all objects -- in camera coordinates
                     dt_traj = 0.5  # spacing between waypoints
                     int_traj = 3  # total time interval
-                    obj_trajectories = {obj.ID: [] for obj in objs}
-                    for dt_ahead in np.arange(dt_traj, dt_traj + int_traj, dt_traj):
-                        # only run if the future time is within the dataset
-                        if timestamp + dt_ahead <= timestamps_all[-1]:
+                    obj_trajectories = {
+                        "previous": {obj.ID: [] for obj in objs},
+                        "current": {obj.ID: None for obj in objs},
+                        "future": {obj.ID: [] for obj in objs},
+                    }
+
+                    # get static camera reference frame (no velocity)
+                    static_cam_reference = cam_calib.reference.get_static_reference()                    
+                    
+                    # loop over the dts behind and ahead
+                    dt_range = np.arange(-dt_traj, dt_traj + int_traj, dt_traj)
+                    if 0 not in dt_range:
+                        raise RuntimeError(
+                            "We need to include dt=0 for the current states"
+                        )
+                    
+
+                    for dt_traj_i in dt_range:
+                        # only run if the consider time is within the dataset
+                        t_this = timestamp + dt_traj_i
+                        if (t_this > timestamps_all[0]) and (
+                            t_this <= timestamps_all[-1]
+                        ):
                             # get the frame corresponding to this time
-                            frame_ahead = SD.get_frame_at_timestamp(
-                                timestamp=timestamp + dt_ahead,
+                            frame_this = SD.get_frame_at_timestamp(
+                                timestamp=t_this,
                                 sensor=sensor_primary,
                                 agent=None,
                                 utime=False,
                                 dt_tolerance=0.5,
                             )
 
-                            # get future trajs -- assumes consistent object IDs
-                            objs_future = SD.get_objects(
-                                frame=frame_ahead, sensor=sensor_primary, agent=agent
+                            # get traj at this time -- assumes consistent object IDs
+                            objs_traj_point = SD.get_objects(
+                                frame=frame_this, sensor=sensor_primary, agent=agent
                             )
-                            for obj_future in objs_future:
-                                if obj_future.ID in obj_trajectories:
-                                    # change reference frame
-                                    obj_future.change_reference(
-                                        cam_calib.reference, inplace=True
+                            for obj_traj_point in objs_traj_point:
+                                if obj_traj_point.ID in obj_IDs:
+                                    # change reference frame -- make it static so velocity is absolute
+                                    obj_traj_point.change_reference(
+                                        static_cam_reference, inplace=True
                                     )
 
                                     # append the object
-                                    obj_trajectories[obj_future.ID].append(
-                                        {
-                                            "frame": frame_ahead,
-                                            "timestamp": timestamp + dt_ahead,
-                                            "state": convert_object_to_dictionary(
-                                                obj_future
-                                            ),
-                                        }
-                                    )
-
+                                    entry = {
+                                        "frame": frame_ahead,
+                                        "timestamp": timestamp + dt_ahead,
+                                        "state": convert_object_to_dictionary_bev(
+                                            obj_traj_point
+                                        ),
+                                    }
+                                    if dt_traj_i == 0:
+                                        key = "current"
+                                        obj_trajectories[key][obj_traj_point.ID] = entry
+                                    else:
+                                        if dt_traj_i < 0:
+                                            key = "previous"
+                                        else:
+                                            key = "future"
+                                        obj_trajectories[key][obj_traj_point.ID].append(entry)
+                    
                     # denote the set of "key" objects
                     key_objects = [
                         obj.ID for obj in objs if obj.position.norm() < d_key_thresh
@@ -333,11 +368,10 @@ def main(args, d_key_thresh=15):
                         "waypoints_pixel": waypoints_pixel,
                         "object_states": {
                             "key_objects": key_objects,
-                            "states": obj_states,
-                            "trajectories": obj_trajectories,
+                            "trajectoriers": obj_trajectories,
                         },
-                        "agent_state": {
-                            view: convert_object_to_dictionary(state)
+                        "ego_state": {
+                            view: convert_object_to_dictionary_bev(state)
                             for view, state in zip(
                                 ["global", "local", "diff"],
                                 [
